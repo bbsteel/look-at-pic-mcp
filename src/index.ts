@@ -15,7 +15,7 @@ let config: { api_key: string; model: string; api_base: string; port: number };
 try {
   config = JSON.parse(readFileSync(configPath, "utf-8"));
 } catch (e) {
-  console.error("Failed to read config.json:", e);
+  console.error("读取 config.json 失败:", e);
   process.exit(1);
 }
 
@@ -23,6 +23,7 @@ try {
 const client = new OpenAI({
   apiKey: config.api_key,
   baseURL: config.api_base,
+  timeout: 60000,
 });
 
 // Built-in system prompt for exhaustive image description
