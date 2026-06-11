@@ -67,7 +67,7 @@ server.registerTool(
     description: "对图片进行理解和分析，支持 URL 或 base64 输入。不传 prompt 时返回详尽的图片描述。",
     inputSchema: {
       image_url: z.string().url().optional().describe("图片的 HTTP/HTTPS URL"),
-      image_base64: z.string().optional().describe("图片的 base64 编码字符串"),
+      image_base64: z.string().optional().describe("图片的 base64 编码字符串，或完整的 data: URI（如 data:image/jpeg;base64,...）"),
       prompt: z.string().optional().describe("针对图片的自定义提问。不传则使用内置 prompt 做详尽描述"),
     },
   },
@@ -83,7 +83,7 @@ server.registerTool(
     }
 
     // Build image content — image_url takes priority if both provided
-    const imageSource = image_url || `data:image/png;base64,${image_base64}`;
+    const imageSource = image_url || (image_base64!.startsWith("data:") ? image_base64! : `data:image/png;base64,${image_base64}`);
 
     // Build messages based on whether custom prompt is provided
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
@@ -139,7 +139,7 @@ async function main() {
   const app = express();
 
   // Express body parser: parse JSON body
-  app.use(express.json());
+  app.use(express.json({ limit: "50mb" }));
 
   // Handle all MCP requests (GET for SSE, POST for messages, DELETE for session)
   app.all("/mcp", async (req, res) => {
@@ -148,8 +148,16 @@ async function main() {
 
   await server.connect(transport);
 
-  app.listen(config.port, () => {
+  const httpServer = app.listen(config.port, () => {
     console.log(`Look At Pic MCP server running at http://localhost:${config.port}/mcp`);
+  });
+  httpServer.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE") {
+      console.error(`端口 ${config.port} 已被占用`);
+    } else {
+      console.error("服务器启动失败:", err.message);
+    }
+    process.exit(1);
   });
 }
 
