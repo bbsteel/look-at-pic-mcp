@@ -1,6 +1,5 @@
 {
   "api_key": "c9ba715dc64a4db894189bc735ffe3a8.vIU7ddK8aKpnZZXc",
   "model": "glm-4v",
-  "api_base": "https://open.bigmodel.cn/api/paas/v4/",
-  "port": 3100
+  "api_base": "https://open.bigmodel.cn/api/paas/v4/"
 }

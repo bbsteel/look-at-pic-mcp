@@ -1,6 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import express from "express";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import OpenAI from "openai";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -11,7 +10,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Load config
 const configPath = join(__dirname, "..", "config.json");
-let config: { api_key: string; model: string; api_base: string; port: number };
+let config: { api_key: string; model: string; api_base: string };
 try {
   config = JSON.parse(readFileSync(configPath, "utf-8"));
 } catch (e) {
@@ -49,11 +48,6 @@ const IMAGE_ANALYSIS_SYSTEM_PROMPT = [
   "- If the image is cropped, truncated, or partially obscured, explicitly note which parts are missing or at what boundaries the content is cut off.",
   "- Do NOT suggest next steps or ask follow-up questions — just describe.",
 ].join("\n");
-
-// Create MCP server with stateless transport
-const transport = new StreamableHTTPServerTransport({
-  sessionIdGenerator: undefined,
-});
 
 const server = new McpServer({
   name: "look-at-pic",
@@ -134,31 +128,10 @@ server.registerTool(
   }
 );
 
-// Setup Express + MCP transport
+// Start MCP server with stdio transport
 async function main() {
-  const app = express();
-
-  // Express body parser: parse JSON body
-  app.use(express.json({ limit: "50mb" }));
-
-  // Handle all MCP requests (GET for SSE, POST for messages, DELETE for session)
-  app.all("/mcp", async (req, res) => {
-    await transport.handleRequest(req, res, req.body);
-  });
-
+  const transport = new StdioServerTransport();
   await server.connect(transport);
-
-  const httpServer = app.listen(config.port, () => {
-    console.log(`Look At Pic MCP server running at http://localhost:${config.port}/mcp`);
-  });
-  httpServer.on("error", (err: NodeJS.ErrnoException) => {
-    if (err.code === "EADDRINUSE") {
-      console.error(`端口 ${config.port} 已被占用`);
-    } else {
-      console.error("服务器启动失败:", err.message);
-    }
-    process.exit(1);
-  });
 }
 
 main().catch((err) => {

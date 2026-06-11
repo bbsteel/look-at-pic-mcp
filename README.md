@@ -10,7 +10,7 @@ Analyze an image using GLM-4V.
 
 **Parameters:**
 - `image_url` (string, optional): HTTP/HTTPS URL of the image
-- `image_base64` (string, optional): Base64-encoded image data
+- `image_base64` (string, optional): Base64-encoded image data, or full data: URI
 - `prompt` (string, optional): Custom question about the image. If omitted, returns exhaustive description.
 
 ## Configuration
@@ -21,8 +21,7 @@ Edit `config.json`:
 {
   "api_key": "your-glm-api-key",
   "model": "glm-4v",
-  "api_base": "https://open.bigmodel.cn/api/paas/v4/",
-  "port": 3100
+  "api_base": "https://open.bigmodel.cn/api/paas/v4/"
 }
 ```
 
@@ -30,7 +29,18 @@ Edit `config.json`:
 
 ```bash
 npm install
-npm start
 ```
 
-Server runs at `http://localhost:3100/mcp` (SSE endpoint for MCP clients).
+Stdio MCP server — configure your MCP client to spawn this process:
+
+```json
+{
+  "mcpServers": {
+    "look-at-pic": {
+      "command": "npx",
+      "args": ["tsx", "src/index.ts"],
+      "cwd": "/path/to/look_at_pic_mcp"
+    }
+  }
+}
+```
