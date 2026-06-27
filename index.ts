@@ -1,15 +1,43 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import OpenAI from "openai";
-import { readFileSync, existsSync, appendFileSync } from "node:fs";
+import { readFileSync, existsSync, appendFileSync, statSync } from "node:fs";
 import { join, dirname, extname, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { z } from "zod";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const LOG_FILE = join(tmpdir(), "look-at-pic-mcp.log");
+export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+export const MAX_IMAGE_BASE64_LENGTH = Math.ceil(MAX_IMAGE_BYTES / 3) * 4;
+const IMAGE_MIME_BY_EXTENSION: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".bmp": "image/bmp",
+};
+
+export function getImageMimeForPath(filePath: string) {
+  const ext = extname(filePath).toLowerCase();
+  return IMAGE_MIME_BY_EXTENSION[ext];
+}
+
+export function isImageFileTooLarge(fileSize: number) {
+  return fileSize > MAX_IMAGE_BYTES;
+}
+
+export function getBase64PayloadLength(input: string) {
+  if (!input.startsWith("data:")) {
+    return input.length;
+  }
+
+  const commaIndex = input.indexOf(",");
+  return commaIndex === -1 ? 0 : input.length - commaIndex - 1;
+}
 
 function log(msg: string) {
   const line = `[${new Date().toISOString()}] ${msg}\n`;
@@ -103,17 +131,22 @@ server.registerTool(
         };
       }
       try {
+        const mime = getImageMimeForPath(resolvedPath);
+        if (!mime) {
+          const ext = extname(resolvedPath).toLowerCase();
+          return {
+            content: [{ type: "text" as const, text: `Unsupported image file extension: ${ext || "(none)"}` }],
+            isError: true,
+          };
+        }
+        const fileSize = statSync(resolvedPath).size;
+        if (isImageFileTooLarge(fileSize)) {
+          return {
+            content: [{ type: "text" as const, text: `Image file is too large: ${fileSize} bytes. Maximum allowed size is ${MAX_IMAGE_BYTES} bytes.` }],
+            isError: true,
+          };
+        }
         const imgBytes = readFileSync(resolvedPath);
-        const ext = extname(resolvedPath).toLowerCase();
-        const mimeMap: Record<string, string> = {
-          ".png": "image/png",
-          ".jpg": "image/jpeg",
-          ".jpeg": "image/jpeg",
-          ".gif": "image/gif",
-          ".webp": "image/webp",
-          ".bmp": "image/bmp",
-        };
-        const mime = mimeMap[ext] || "image/png";
         const b64 = imgBytes.toString("base64");
         imageSource = `data:${mime};base64,${b64}`;
       } catch (e) {
@@ -125,6 +158,13 @@ server.registerTool(
         };
       }
     } else {
+      const base64Length = getBase64PayloadLength(image_base64!);
+      if (base64Length > MAX_IMAGE_BASE64_LENGTH) {
+        return {
+          content: [{ type: "text" as const, text: `Base64 image data is too large: ${base64Length} characters. Maximum allowed length is ${MAX_IMAGE_BASE64_LENGTH} characters for a ${MAX_IMAGE_BYTES} byte image.` }],
+          isError: true,
+        };
+      }
       imageSource = image_base64!.startsWith("data:") ? image_base64! : `data:image/png;base64,${image_base64!}`;
     }
 
@@ -185,7 +225,9 @@ async function main() {
   await server.connect(transport);
 }
 
-main().catch((err) => {
-  console.error("Failed to start server:", err);
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((err) => {
+    console.error("Failed to start server:", err);
+    process.exit(1);
+  });
+}
