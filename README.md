@@ -44,7 +44,7 @@ Stdio MCP server — configure your MCP client to spawn this process.
   "mcpServers": {
     "look-at-pic": {
       "command": "bun",
-      "args": ["run", "/path/to/look_at_pic_mcp/src/index.ts"]
+      "args": ["run", "/path/to/look_at_pic_mcp/index.ts"]
     }
   }
 }
@@ -57,7 +57,7 @@ Stdio MCP server — configure your MCP client to spawn this process.
   "mcpServers": {
     "look-at-pic": {
       "command": "npx",
-      "args": ["tsx", "src/index.ts"],
+      "args": ["tsx", "index.ts"],
       "cwd": "/path/to/look_at_pic_mcp"
     }
   }

@@ -1,20 +1,28 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import OpenAI from "openai";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, appendFileSync } from "node:fs";
 import { join, dirname, extname, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+const LOG_FILE = join(tmpdir(), "look-at-pic-mcp.log");
+
+function log(msg: string) {
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  try { appendFileSync(LOG_FILE, line); } catch {}
+}
+
 // Load config
-const configPath = join(__dirname, "..", "config.json");
+const configPath = join(__dirname, "config.json");
 let config: { api_key: string; model: string; api_base: string };
 try {
   config = JSON.parse(readFileSync(configPath, "utf-8"));
 } catch (e) {
-  console.error("读取 config.json 失败:", e);
+  console.error("Failed to load config.json:", e);
   process.exit(1);
 }
 
@@ -58,20 +66,28 @@ const server = new McpServer({
 server.registerTool(
   "vision_query",
   {
-    description: "对图片进行理解和分析，支持 base64 或本地文件路径输入。不传 prompt 时返回详尽的图片描述。",
+    description: "Analyze an image using GLM-4V. Accepts a local file path or base64 data. Omit prompt for an exhaustive description.",
     inputSchema: {
-      image_base64: z.string().optional().describe("图片的 base64 编码字符串，或完整的 data: URI（如 data:image/jpeg;base64,...）"),
-      image_path: z.string().optional().describe("图片的本地文件路径（绝对路径或相对路径）"),
-      prompt: z.string().optional().describe("针对图片的自定义提问。不传则使用内置 prompt 做详尽描述"),
+      image_base64: z.string().optional().describe("Base64-encoded image string, or a full data: URI (e.g. data:image/jpeg;base64,...)"),
+      image_path: z.string().optional().describe("Local file path to the image (absolute or relative)"),
+      prompt: z.string().optional().describe("Question about the image. Omit to get a detailed description using the built-in prompt."),
     },
   },
   async (args) => {
     const { image_base64, image_path, prompt } = args;
+    const t0 = Date.now();
+
+    const inputDesc = image_path
+      ? `path:${image_path}`
+      : image_base64
+        ? `base64:${image_base64.slice(0, 10)}...`
+        : "none";
 
     // Validate: must provide at least one of image_base64, image_path
     if (!image_base64 && !image_path) {
+      log(`vision_query | input=${inputDesc} | status=error | Must provide image_base64 or image_path`);
       return {
-        content: [{ type: "text" as const, text: "必须提供 image_base64 或 image_path 参数" }],
+        content: [{ type: "text" as const, text: "Must provide image_base64 or image_path" }],
         isError: true,
       };
     }
@@ -82,7 +98,7 @@ server.registerTool(
       const resolvedPath = resolve(image_path);
       if (!existsSync(resolvedPath)) {
         return {
-          content: [{ type: "text" as const, text: `文件不存在: ${resolvedPath}` }],
+          content: [{ type: "text" as const, text: `File not found: ${resolvedPath}` }],
           isError: true,
         };
       }
@@ -102,8 +118,9 @@ server.registerTool(
         imageSource = `data:${mime};base64,${b64}`;
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
+        log(`vision_query | input=${inputDesc} | status=error | ${msg} | ${Date.now() - t0}ms`);
         return {
-          content: [{ type: "text" as const, text: `读取文件失败: ${msg}` }],
+          content: [{ type: "text" as const, text: `Failed to read file: ${msg}` }],
           isError: true,
         };
       }
@@ -124,7 +141,7 @@ server.registerTool(
         role: "user",
         content: [
           { type: "image_url", image_url: { url: imageSource } },
-          { type: "text", text: "请描述这张图片" },
+          { type: "text", text: "Please describe this image." },
         ],
       });
     } else {
@@ -147,13 +164,15 @@ server.registerTool(
 
       const text = response.choices[0]?.message?.content ?? "";
 
+      log(`vision_query | input=${inputDesc} | status=ok | ${Date.now() - t0}ms`);
       return {
         content: [{ type: "text" as const, text }],
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      log(`vision_query | input=${inputDesc} | status=error | ${message} | ${Date.now() - t0}ms`);
       return {
-        content: [{ type: "text" as const, text: `GLM API 调用失败: ${message}` }],
+        content: [{ type: "text" as const, text: `GLM API error: ${message}` }],
         isError: true,
       };
     }
