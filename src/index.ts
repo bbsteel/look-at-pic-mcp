@@ -1,8 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import OpenAI from "openai";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { readFileSync, existsSync } from "node:fs";
+import { join, dirname, extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
@@ -58,26 +58,58 @@ const server = new McpServer({
 server.registerTool(
   "vision_query",
   {
-    description: "对图片进行理解和分析，支持 URL 或 base64 输入。不传 prompt 时返回详尽的图片描述。",
+    description: "对图片进行理解和分析，支持 base64 或本地文件路径输入。不传 prompt 时返回详尽的图片描述。",
     inputSchema: {
-      image_url: z.string().url().optional().describe("图片的 HTTP/HTTPS URL"),
       image_base64: z.string().optional().describe("图片的 base64 编码字符串，或完整的 data: URI（如 data:image/jpeg;base64,...）"),
+      image_path: z.string().optional().describe("图片的本地文件路径（绝对路径或相对路径）"),
       prompt: z.string().optional().describe("针对图片的自定义提问。不传则使用内置 prompt 做详尽描述"),
     },
   },
   async (args) => {
-    const { image_url, image_base64, prompt } = args;
+    const { image_base64, image_path, prompt } = args;
 
-    // Validate: must provide either image_url or image_base64
-    if (!image_url && !image_base64) {
+    // Validate: must provide at least one of image_base64, image_path
+    if (!image_base64 && !image_path) {
       return {
-        content: [{ type: "text" as const, text: "必须提供 image_url 或 image_base64 参数" }],
+        content: [{ type: "text" as const, text: "必须提供 image_base64 或 image_path 参数" }],
         isError: true,
       };
     }
 
-    // Build image content — image_url takes priority if both provided
-    const imageSource = image_url || (image_base64!.startsWith("data:") ? image_base64! : `data:image/png;base64,${image_base64}`);
+    // Build image content — image_path takes priority over image_base64
+    let imageSource: string;
+    if (image_path) {
+      const resolvedPath = resolve(image_path);
+      if (!existsSync(resolvedPath)) {
+        return {
+          content: [{ type: "text" as const, text: `文件不存在: ${resolvedPath}` }],
+          isError: true,
+        };
+      }
+      try {
+        const imgBytes = readFileSync(resolvedPath);
+        const ext = extname(resolvedPath).toLowerCase();
+        const mimeMap: Record<string, string> = {
+          ".png": "image/png",
+          ".jpg": "image/jpeg",
+          ".jpeg": "image/jpeg",
+          ".gif": "image/gif",
+          ".webp": "image/webp",
+          ".bmp": "image/bmp",
+        };
+        const mime = mimeMap[ext] || "image/png";
+        const b64 = imgBytes.toString("base64");
+        imageSource = `data:${mime};base64,${b64}`;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: `读取文件失败: ${msg}` }],
+          isError: true,
+        };
+      }
+    } else {
+      imageSource = image_base64!.startsWith("data:") ? image_base64! : `data:image/png;base64,${image_base64!}`;
+    }
 
     // Build messages based on whether custom prompt is provided
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
