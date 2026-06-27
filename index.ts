@@ -30,7 +30,7 @@ try {
 const client = new OpenAI({
   apiKey: config.api_key,
   baseURL: config.api_base,
-  timeout: 60000,
+  timeout: 120000,
 });
 
 // Built-in system prompt for exhaustive image description
