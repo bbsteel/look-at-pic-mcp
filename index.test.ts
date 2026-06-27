@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 import test from "node:test";
 import {
+  createModelTextResult,
   getBase64PayloadLength,
   getImageMimeForPath,
   isImageFileTooLarge,
@@ -38,4 +39,11 @@ test("getBase64PayloadLength counts only the payload of a data URI", () => {
 
 test("MAX_IMAGE_BASE64_LENGTH matches the 5MB base64 expansion", () => {
   assert.equal(MAX_IMAGE_BASE64_LENGTH, Math.ceil(MAX_IMAGE_BYTES / 3) * 4);
+});
+
+test("createModelTextResult treats empty model text as an error", () => {
+  const result = createModelTextResult("");
+
+  assert.equal(result.isError, true);
+  assert.equal(result.content[0].text, "Vision model API returned empty response text");
 });

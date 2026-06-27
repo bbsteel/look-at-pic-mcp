@@ -1,12 +1,12 @@
 # Look At Pic MCP
 
-MCP server providing image recognition via GLM-4V multimodal model.
+MCP server providing image recognition via an OpenAI-compatible multimodal vision model.
 
 ## Tool
 
 ### `vision_query`
 
-Analyze an image using GLM-4V.
+Analyze an image using a configured multimodal vision model.
 
 **Parameters:**
 - `image_path` (string, optional): Local file path (absolute or relative)
@@ -19,9 +19,9 @@ Edit `config.json`:
 
 ```json
 {
-  "api_key": "your-glm-api-key",
-  "model": "glm-4v",
-  "api_base": "https://open.bigmodel.cn/api/paas/v4/"
+  "api_key": "your-api-key",
+  "model": "your-vision-model",
+  "api_base": "https://your-openai-compatible-api.example/v1"
 }
 ```
 
